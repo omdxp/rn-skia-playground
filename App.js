@@ -1,43 +1,47 @@
+import {AnimationDemo, AnimationElement, Padding, Size} from './Components';
 import {
   Canvas,
-  ImageShader,
-  Paint,
-  Rect,
-  Shader,
-  Skia,
-  mix,
-  useLoop,
+  Spring,
+  useTouchHandler,
+  useValue,
 } from '@shopify/react-native-skia';
+import {Dimensions, StyleSheet} from 'react-native';
 
-import {Dimensions} from 'react-native';
 import React from 'react';
+import {runSpring} from '@shopify/react-native-skia/src/animation/Animation/functions';
 
-const {width, height} = Dimensions.get('window');
+const {width} = Dimensions.get('window');
 
-const source = Skia.RuntimeEffect.Make(`
-uniform shader image;
-uniform float r;
-half4 main(float2 xy) {   
-  xy.x += sin(xy.y / r) * 4;
-  return image.eval(xy).rbga;
-}`);
+const AnimationWithTouchHandler = () => {
+  const translateX = useValue((width - Size - Padding) / 2);
+  const offsetX = useValue(0);
+  const touchHandler = useTouchHandler({
+    onStart: ({x}) => (offsetX.value = x - translateX.value),
+    onActive: ({x}) => (translateX.value = x - offsetX.value),
+    onEnd: ({velocityX}) => {
+      runSpring(
+        translateX,
+        (width - Size - Padding) / 2,
+        Spring.Wobbly({velocity: velocityX}),
+      );
+    },
+  });
 
-const Filters = () => {
-  const progress = useLoop({duration: 1500}, {yoyo: true});
   return (
-    <Canvas style={{width, height}}>
-      <Paint>
-        <Shader source={source} uniforms={() => [mix(progress.value, 1, 100)]}>
-          <ImageShader
-            source={require('./oslo.jpg')}
-            fit="cover"
-            fitRect={{x: 0, y: 0, width, height}}
-          />
-        </Shader>
-      </Paint>
-      <Rect x={0} y={0} width={width} height={height} />
-    </Canvas>
+    <AnimationDemo title={'Animation with touch handler.'}>
+      <Canvas style={styles.canvas} onTouch={touchHandler}>
+        <AnimationElement x={() => translateX.value} />
+      </Canvas>
+    </AnimationDemo>
   );
 };
 
-export default Filters;
+export default AnimationWithTouchHandler;
+
+const styles = StyleSheet.create({
+  canvas: {
+    height: 80,
+    width: width - Padding,
+    backgroundColor: '#FEFEFE',
+  },
+});
