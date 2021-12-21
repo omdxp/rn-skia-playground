@@ -1,73 +1,108 @@
+import {Button, StyleSheet, View} from 'react-native';
 import {
-  BlurMask,
-  Canvas,
-  Circle,
-  Easing,
-  Fill,
-  Group,
-  Paint,
-  mix,
-  polar2Canvas,
-  useLoop,
-  vec,
+  PaintStyle,
+  Skia,
+  SkiaView,
+  StrokeCap,
+  useDrawCallback,
+  usePaint,
+  useTouchHandler,
 } from '@shopify/react-native-skia';
-import {Dimensions, StyleSheet} from 'react-native';
-import React, {useCallback} from 'react';
+import React, {useMemo, useRef} from 'react';
 
-const {width, height} = Dimensions.get('window');
-const c1 = '#61bea2';
-const c2 = '#529ca0';
-const R = width / 4;
-const center = vec(width / 2, height / 2 - 64);
+const DrawingExample = () => {
+  const paint = usePaint(p => p.setColor(Skia.Color('#7FC8A9')));
+  const prevPointRef = useRef();
 
-const Ring = ({index, progress}) => {
-  const theta = (index * (2 * Math.PI)) / 6;
-  const transform = useCallback(() => {
-    const {x, y} = polar2Canvas(
-      {theta, radius: progress.value * R},
-      {x: 0, y: 0},
-    );
-    const scale = mix(progress.value, 0.3, 1);
-    return [{translateX: x}, {translateY: y}, {scale}];
-  }, [progress.value, theta]);
+  const pathPaint = usePaint(p => {
+    p.setColor(Skia.Color('#7F33A9'));
+    p.setStrokeWidth(5);
+    p.setStyle(PaintStyle.Stroke);
+    p.setStrokeCap(StrokeCap.Round);
+  });
 
-  return (
-    <Group origin={center} transform={transform}>
-      <Circle c={center} r={R} color={index % 2 ? c1 : c2} />
-    </Group>
-  );
-};
+  const paths = useMemo(() => [], []);
 
-const Breathe = () => {
-  const progress = useLoop(
-    {
-      duration: 3000,
-      easing: Easing.inOut(Easing.ease),
+  const touchHandler = useTouchHandler({
+    onStart: ({x, y}) => {
+      const path = Skia.Path.Make();
+      paths.push(path);
+      path.moveTo(x, y);
+      prevPointRef.current = {x, y};
     },
-    {yoyo: true},
+    onActive: ({x, y}) => {
+      // Get current path object
+      const path = paths[paths.length - 1];
+
+      // Calculate and draw a smooth curve
+      const xMid = (prevPointRef.current.x + x) / 2;
+      const yMid = (prevPointRef.current.y + y) / 2;
+
+      path.quadTo(prevPointRef.current.x, prevPointRef.current.y, xMid, yMid);
+
+      prevPointRef.current = {x, y};
+    },
+  });
+
+  const onDraw = useDrawCallback(
+    (canvas, info) => {
+      // Update from pending touches
+      touchHandler(info.touches);
+
+      // Clear screen
+      canvas.drawPaint(paint);
+
+      // Draw paths
+      if (paths.length > 0) {
+        for (let i = 0; i < paths.length; i++) {
+          canvas.drawPath(paths[i], pathPaint);
+        }
+      }
+    },
+    [paint, pathPaint, paths],
   );
 
+  const skiaViewRef = useRef(null);
+
   return (
-    <Canvas style={styles.container} debug>
-      <Paint blendMode="screen">
-        <BlurMask style="solid" sigma={40} />
-      </Paint>
-      <Fill color="rgb(36,43,56)" />
-      <Group
-        origin={center}
-        transform={() => [{rotate: mix(progress.value, -Math.PI, 0)}]}>
-        {new Array(6).fill(0).map((_, index) => {
-          return <Ring key={index} index={index} progress={progress} />;
-        })}
-      </Group>
-    </Canvas>
+    <>
+      <SkiaView
+        ref={skiaViewRef}
+        style={styles.skiaview}
+        onDraw={onDraw}
+        debug
+      />
+      <View style={styles.buttons}>
+        <Button
+          title="Clear"
+          onPress={() => {
+            paths.length = 0;
+            skiaViewRef.current?.redraw();
+          }}
+        />
+        <Button
+          title="Undo"
+          onPress={() => {
+            paths.length = Math.max(0, paths.length - 1);
+            skiaViewRef.current?.redraw();
+          }}
+        />
+      </View>
+    </>
   );
 };
 
-export default Breathe;
+export default DrawingExample;
 
 const styles = StyleSheet.create({
-  container: {
+  skiaview: {
+    width: '100%',
     flex: 1,
+    overflow: 'hidden',
+  },
+  buttons: {
+    flexDirection: 'row',
+    paddingBottom: 24,
+    paddingHorizontal: 14,
   },
 });
